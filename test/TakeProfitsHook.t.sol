@@ -113,4 +113,29 @@ contract TakeProfitsHookTest is Test, Deployers, ERC1155Holder {
         assertTrue(orderId != 0);
         assertEq(tokenBalance, amount);
     }
+
+    function test_cancelOrder() public {
+        int24 tick = 100;
+        uint256 amount = 10e18;
+        bool zeroForOne = true;
+
+        uint256 originalBalance = token0.balanceOfSelf();
+        int24 tickLower = hook.placeOrder(key, tick, zeroForOne, amount);
+        uint256 newBalance = token0.balanceOfSelf();
+
+        assertEq(tickLower, 60);
+        assertEq(originalBalance - newBalance, amount);
+
+        uint256 orderId = hook.getOrderId(key, tickLower, zeroForOne);
+        uint256 tokenBalance = hook.balanceOf(address(this), orderId);
+        assertEq(tokenBalance, amount);
+
+        hook.cancelOrder(key, tickLower, zeroForOne, amount);
+
+        uint256 finalBalance = token0.balanceOfSelf();
+        assertEq(finalBalance, originalBalance);
+
+        tokenBalance = hook.balanceOf(address(this), orderId);
+        assertEq(tokenBalance, 0);
+    }
 }
