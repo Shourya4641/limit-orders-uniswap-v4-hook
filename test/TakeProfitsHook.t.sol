@@ -138,4 +138,52 @@ contract TakeProfitsHookTest is Test, Deployers, ERC1155Holder {
         tokenBalance = hook.balanceOf(address(this), orderId);
         assertEq(tokenBalance, 0);
     }
+
+    function test_orderExecute_zeroForOne() public {
+        int24 tick = 100;
+        uint256 amount = 1 ether;
+        bool zeroForOne = true;
+
+        // Place our order at tick 100 for 10e18 token0 tokens
+        int24 tickLower = hook.placeOrder(key, tick, zeroForOne, amount);
+
+        // Do a separate swap from oneForZero to make tick go up
+        // Sell 1e18 token1 tokens for token0 tokens
+        SwapParams memory params = SwapParams({
+            zeroForOne: !zeroForOne,
+            amountSpecified: -1 ether,
+            sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+        });
+
+        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest
+            .TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        // Conduct the swap - `afterSwap` should also execute our placed order
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+
+        // Check that the order has been executed
+        // by ensuring no amount is left to sell in the pending orders
+        uint256 pendingTokensForPosition = hook.pendingOrders(
+            key.toId(),
+            tick,
+            zeroForOne
+        );
+        assertEq(pendingTokensForPosition, 0);
+
+        // Check that the hook contract has the expected number of token1 tokens ready to redeem
+        uint256 orderId = hook.getOrderId(key, tickLower, zeroForOne);
+        uint256 claimableOutputTokens = hook.claimableOutputTokens(orderId);
+        uint256 hookContractToken1Balance = token1.balanceOf(address(hook));
+        assertEq(claimableOutputTokens, hookContractToken1Balance);
+
+        // Ensure we can redeem the token1 tokens
+        uint256 originalToken1Balance = token1.balanceOf(address(this));
+        hook.redeem(key, tick, zeroForOne, amount);
+        uint256 newToken1Balance = token1.balanceOf(address(this));
+
+        assertEq(
+            newToken1Balance - originalToken1Balance,
+            claimableOutputTokens
+        );
+    }
 }
